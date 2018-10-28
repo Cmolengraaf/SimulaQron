@@ -450,7 +450,6 @@ class StabilizerState:
         # Perform effective CNOT from X column to Z column
         xy_rows = self._group[:, position]
         self._group[xy_rows, position + n] = np.logical_not(self._group[xy_rows, position + n])
-
         # Update the phases
         x_rows = np.logical_and(self._group[:, position], np.logical_not(self._group[:, position + n]))
         self._group[x_rows, -1] = np.logical_not(self._group[x_rows, -1])
@@ -555,12 +554,12 @@ class StabilizerState:
             tmp_matrix = np.concatenate((tmp_matrix[tmp_matrix[:,0],: ],tmp_matrix[rows_without_position,: ]), 0)
         else:
             rows_without_position = np.logical_not(tmp_matrix[:,n])
+            tmp_matrix = np.concatenate((tmp_matrix[tmp_matrix[:,n],: ],tmp_matrix[rows_without_position,: ]), 0)
 
         # Check if there is an X or a Y at the qubit position
         if tmp_matrix[0, 0]:
             # The first row (generator) of this matrix is then the only one that doesn't commute with the observabel Z
             outcome = randint(0, 1)
-
             # If outcome is 1 we need to flip phases for the other generators that has an Z at this qubit
             if outcome == 1:
                 z_rows = tmp_matrix[:, n]
@@ -578,7 +577,6 @@ class StabilizerState:
                 if outcome == 1:
                     tmp_matrix[0, -1] = not tmp_matrix[0, -1]
                 # Set the rest of the first column to be identity
-
                 tmp_matrix[1:, n] = False
                 # Swap back the X and Z columns of this qubit
                 self._group = tmp_matrix[:,np.argsort(perm)]
@@ -689,3 +687,71 @@ class StabilizerState:
             return G,operations
         else:
             return G
+    def teleport_one_qubit(self,a=0):
+        n=self.num_qubits
+
+        S_2B_graph = StabilizerState(2)
+        for j in range(2):
+            S_2B_graph.apply_H(j)
+        S_2B_graph.apply_CZ(0,1)
+
+        S_tot = (self * S_2B_graph)
+        tmp_matrix = S_tot.to_array()
+        perm = list(range(n+2))
+        perm[a],perm[n]=perm[n],perm[a]
+        perm.extend([i+n+2 for i in perm])
+        perm.append(2*(n+2))
+        S_tot = StabilizerState(tmp_matrix[:,perm])
+
+        S_tot.apply_CZ(n,n+1)
+        for j in [n,n+1]:
+            S_tot.apply_H(j)
+
+        meas_outcomes = []
+        for j in [n+1,n]:
+            meas_res = S_tot.measure(j)
+            meas_outcomes.append(meas_res)
+        for j,meas in enumerate(meas_outcomes):
+            if meas==1 and j==0:
+                S_tot.apply_X(a)
+            if meas==1 and j==1:
+                S_tot.apply_Z(a)
+        return S_tot
+
+    def teleport_multiple_qubits(self,a=[0,1]):
+        n=self.num_qubits
+        m = len(a)
+        ancilla_graph = StabilizerState(2*m)
+        for j in range(m):
+            ancilla_graph.apply_H(j)
+            ancilla_graph.apply_H(j+m)
+            ancilla_graph.apply_CZ(j,j+m)
+
+        S_tot = (self * ancilla_graph)
+        tmp_matrix = S_tot.to_array()
+        perm = list(range(n+2*m))
+        for i,j in enumerate(a):
+            perm[j],perm[n+i]=perm[n+i],perm[j]
+        perm.extend([i+n+2*m for i in perm])
+        perm.append(2*(n+2*m))
+        S_tot = StabilizerState(tmp_matrix[:,perm])
+
+        for j in range(m):
+            S_tot.apply_CZ(n+j,n+m+j)
+            S_tot.apply_H(n+j)
+            S_tot.apply_H(n+m+j)
+
+        meas_outcomes = []
+        for j in range(m):
+            meas_res = S_tot.measure(n+2*m-1-j)
+            meas_outcomes.append(meas_res)
+            if meas_res:
+                S_tot.apply_X(a[::-1][j])
+
+        for j in range(m):
+            meas_res = S_tot.measure(n+m-1-j)
+            meas_outcomes.append(meas_res)
+            if meas_res:
+                S_tot.apply_Z(a[::-1][j])
+
+        return S_tot
