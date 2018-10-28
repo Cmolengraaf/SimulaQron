@@ -718,8 +718,10 @@ class StabilizerState:
                 S_tot.apply_Z(a)
         return S_tot
 
-    def teleport_multiple_qubits(self,a=[0,1]):
+    def teleport_multiple_qubits(self,a=None):
         n=self.num_qubits
+        if not a:
+            a = sample(range(n), 2)
         m = len(a)
         ancilla_graph = StabilizerState(2*m)
         for j in range(m):
@@ -754,4 +756,102 @@ class StabilizerState:
             if meas_res:
                 S_tot.apply_Z(a[::-1][j])
 
+        return S_tot
+
+    def apply_seq_operations(self,seq_oper):
+        for oper,qubits in seq_oper:
+            if oper == 'CZ':
+                self.apply_CZ(qubits[0],qubits[1])
+            elif oper == 'CNOT':
+                self.apply_CNOT(qubits[0],qubits[1])
+            elif oper == 'X':
+                self.apply_X(qubits)
+            elif oper == 'Y':
+                self.apply_Y(qubits)
+            elif oper == 'Z':
+                self.apply_Z(qubits)
+            elif oper == 'S':
+                self.apply_S(qubits)
+            elif oper == 'H':
+                self.apply_H(qubits)
+            elif oper == 'K':
+                self.apply_K(qubits)
+            elif oper == 'LC_N':
+                self.apply_sqrt_IZ(qubits)
+            elif oper == 'LC':
+                self.apply_sqrt_minIX(qubits)
+            else:
+                pass
+
+    def apply_daggered_seq_operations(self,seq_oper):
+        for oper,qubits in seq_oper[::-1]:
+            if oper == 'CZ':
+                self.apply_CZ(qubits[0],qubits[1])
+            elif oper == 'CNOT':
+                self.apply_CNOT(qubits[0],qubits[1])
+            elif oper == 'X':
+                self.apply_X(qubits)
+            elif oper == 'Y':
+                self.apply_Y(qubits)
+            elif oper == 'Z':
+                self.apply_Z(qubits)
+            elif oper == 'S':
+                self.apply_S(qubits)
+                self.apply_Z(qubits)
+            elif oper == 'H':
+                self.apply_H(qubits)
+            elif oper == 'K':
+                self.apply_K(qubits)
+            elif oper == 'LC_N':
+                self.apply_S(qubits)
+            elif oper == 'LC':
+                self.apply_Z(qubits)
+                self.apply_K(qubits)
+            else:
+                pass
+
+    def gate_teleport_two_qubits(self,tele_qubits = [0,1],seq_oper = []):
+        F=StabilizerState(["XIIZ","IXZI","IZXI","ZIIX"])
+        a,b = tele_qubits
+        n=self.num_qubits
+        m = F.num_qubits
+
+        dict = {a:0,b:1,(a,b):(0,1),(b,a):(1,0)}
+        perm_seq_oper = [[i,dict[j]] for i,j in seq_oper]
+        F.apply_seq_operations(perm_seq_oper)
+
+        S_tot = (self * F)
+        tmp_matrix = S_tot.to_array()
+        perm = list(range(n+m))
+
+        for i in range(2):
+            perm[n+i],perm[tele_qubits[i]]=perm[tele_qubits[i]],perm[n+i]
+
+        perm.extend([i+n+m for i in perm])
+        perm.append(2*(n+m))
+
+        S_tot = StabilizerState(tmp_matrix[:,perm])
+        nm = S_tot.num_qubits
+
+        for j in range(2):
+            S_tot.apply_CZ(n+j,nm-j-1)
+            S_tot.apply_H(n+j)
+            S_tot.apply_H(nm-j-1)
+
+        S_tot.apply_daggered_seq_operations(seq_oper)
+        meas_outcomes = []
+
+        for j in range(2):
+            meas_res = S_tot.measure(nm-j-1)
+            meas_outcomes.append(meas_res)
+            if meas_res:
+                S_tot.apply_X(tele_qubits[j])
+
+        for j in range(2):
+            meas_res = S_tot.measure(n)
+            meas_outcomes.append(meas_res)
+            if meas_res:
+                S_tot.apply_Z(tele_qubits[j])
+
+        # S_tot.apply_seq_operations(seq_oper)
         return S_tot
