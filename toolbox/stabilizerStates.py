@@ -542,17 +542,15 @@ class StabilizerState:
         n = self.num_qubits
         if not (position >= 0 and position < n):
             raise ValueError("position= {} if not a valid qubit position (i.e. in [0, {}]".format(position, n))
-        # Perform Gaussian elimination such that there is maximally one X or Y at the qubit position
-        self.put_in_standard_form()
+
         tmp_matrix = self._group
         # Create a new matrix where the X and Z columns of the corresponding qubit are the first.
         perm = [position]+[i for i in range(n) if i!=position]
         perm.extend([i+n for i in perm])
         perm.append(2*n)
         tmp_matrix = tmp_matrix[:,perm]
-        #List row with x on position as first row.
-        rows_without_position = np.logical_not(tmp_matrix[:,0])
-        tmp_matrix = np.concatenate((tmp_matrix[tmp_matrix[:,0],: ],tmp_matrix[rows_without_position,: ]), 0)
+        # Perform Gaussian elimination such that there is maximally one X or Y at the qubit position
+        tmp_matrix = self.boolean_gaussian_elimination(tmp_matrix)
 
         # Check if there is an X or a Y at the qubit position
         if tmp_matrix[0, 0]:
