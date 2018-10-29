@@ -511,6 +511,12 @@ class StabilizerState:
         if control == target:
             raise ValueError("Control and target qubits cannot be the same")
 
+        # Update the phases
+        x_and_y_rows = np.logical_and(self._group[:, control],self._group[:, target])
+        z_rows = np.logical_xor(self._group[:, control+n],self._group[:, target+n])
+        rows_to_flip = np.logical_and(x_and_y_rows,z_rows)
+        self._group[rows_to_flip, -1] = np.logical_not(self._group[rows_to_flip, -1])
+
         # Perform effective CNOT from the control X column to target Z column
         xy_control_rows = self._group[:, control]
         self._group[xy_control_rows, target + n] = np.logical_not(self._group[xy_control_rows, target + n])
@@ -519,12 +525,7 @@ class StabilizerState:
         xy_target_rows = self._group[:, target]
         self._group[xy_target_rows, control + n] = np.logical_not(self._group[xy_target_rows, control + n])
 
-        # Update the phases
 
-        xy_control_rows = self._group[:, control]
-        x_target_rows = np.logical_and(self._group[:, target], np.logical_not(self._group[:, target + n]))
-        rows_to_flip = np.logical_and(xy_control_rows, x_target_rows)
-        self._group[rows_to_flip, -1] = np.logical_not(self._group[rows_to_flip, -1])
 
     def measure(self, position, inplace=False):
         """
