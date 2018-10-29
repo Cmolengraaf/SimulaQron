@@ -376,8 +376,23 @@ class TestStabilizerStates(unittest.TestCase):
         self.assertTrue(GHZ_graph,nx.star_graph(n-1))
         self.assertTrue(operations == [('H', i) for i in range(1,n)])
 
+    def test_doing_single_teleportation(self):
+        for i in range(20):
+            n = 6
+            S = StabilizerState(n)
+            for _ in range(20):
+                S.do_random_SQC()
+            St = S.teleport_one_qubit((i%n))
+            self.assertTrue(np.array_equal(St.to_array(standard_form=True),S.to_array(standard_form=True)))
 
-
+    def test_doing_multi_teleportation(self):
+        for i in range(20):
+            n = 8
+            S = StabilizerState(n)
+            for _ in range(20):
+                S.do_random_SQC()
+            St = S.teleport_multiple_qubits()
+            self.assertTrue(np.array_equal(St.to_array(standard_form=True),S.to_array(standard_form=True)))
 
 if __name__ == '__main__':
     unittest.main()
