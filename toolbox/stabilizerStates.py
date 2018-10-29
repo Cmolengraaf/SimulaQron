@@ -732,7 +732,16 @@ class StabilizerState:
             return G,operations
         else:
             return G
-    def teleport_one_qubit(self,a=0):
+
+    def teleport_one_qubit(self,position=0):
+        """
+        Teleport the state of qubit a to an ancilla state and then relabel the qubits
+        and remove the measured qubits such that the input state is achieved.
+        :param position: position of qubit to be teleported
+        :type position: int
+        :return: The stabilizer state of self (after teleporting)
+        :rtype: :obj:`SimulaQron.toolbox.stabilizerStates.StabilizerState`
+        """
         n=self.num_qubits
 
         S_2B_graph = StabilizerState(2)
@@ -741,65 +750,85 @@ class StabilizerState:
         S_2B_graph.apply_CZ(0,1)
 
         S_tot = (self * S_2B_graph)
+
         tmp_matrix = S_tot.to_array()
         perm = list(range(n+2))
-        perm[a],perm[n]=perm[n],perm[a]
+        perm[position],perm[n]=perm[n],perm[position]
         perm.extend([i+n+2 for i in perm])
         perm.append(2*(n+2))
         S_tot = StabilizerState(tmp_matrix[:,perm])
 
         S_tot.apply_CZ(n,n+1)
+
         for j in [n,n+1]:
             S_tot.apply_H(j)
 
+        S_tot.put_in_standard_form()
         meas_outcomes = []
         for j in [n+1,n]:
             meas_res = S_tot.measure(j)
             meas_outcomes.append(meas_res)
         for j,meas in enumerate(meas_outcomes):
             if meas==1 and j==0:
-                S_tot.apply_X(a)
+                S_tot.apply_X(position)
             if meas==1 and j==1:
-                S_tot.apply_Z(a)
+                S_tot.apply_Z(position)
         return S_tot
 
-    def teleport_multiple_qubits(self,a=None):
+    def teleport_multiple_qubits(self,tele_qubits=None):
+        """
+        Teleport the state of qubits positions to an ancilla state and then relabel the qubits
+        and remove the measured qubits such that the input state is achieved.
+        :param positions: positions of qubit to be teleported
+        :type positions: list
+        :return: The stabilizer state of self (after teleporting)
+        :rtype: :obj:`SimulaQron.toolbox.stabilizerStates.StabilizerState`
+        """
         n=self.num_qubits
-        if not a:
-            a = sample(range(n), 2)
-        m = len(a)
-        ancilla_graph = StabilizerState(2*m)
-        for j in range(m):
-            ancilla_graph.apply_H(j)
-            ancilla_graph.apply_H(j+m)
-            ancilla_graph.apply_CZ(j,j+m)
+        if tele_qubits == None:
+            tele_qubits = sample(range(n),randint(0,n))
+        m = len(tele_qubits)*2 #we need two ancillas per teleported qubit
+        mhalf = int(m/2) #this will be a useful number later
 
-        S_tot = (self * ancilla_graph)
-        tmp_matrix = S_tot.to_array()
-        perm = list(range(n+2*m))
-        for i,j in enumerate(a):
-            perm[j],perm[n+i]=perm[n+i],perm[j]
-        perm.extend([i+n+2*m for i in perm])
-        perm.append(2*(n+2*m))
-        S_tot = StabilizerState(tmp_matrix[:,perm])
+        #Prepare ancilla states
+        F = StabilizerState(m)
+        for j in range(mhalf):
+            F.apply_H(j)
+            F.apply_H(j+mhalf)
+            F.apply_CZ(j,j+mhalf)
 
-        for j in range(m):
-            S_tot.apply_CZ(n+j,n+m+j)
+        #Combine the ancilla state with self, from here on we have n+m qubits.
+        S_tot = (self * F)
+
+        #Relabel such that the ancillas which will be in the new self are on the correct positions already.
+        #i.e., the qubits to be measured are at the end and will be removed when measured to result in n qubits finally.
+        #For example, if we start with qubits [0,1,2,3], tele_qubts=[0,2] and ancilla's [4,5,6,7] this permutation
+        #results in [4,1,5,3,0,2,6,7]. The last four will be measured, so the final state will be on qubits [4,1,5,3].
+        perm = list(range(n+m))
+        for i in range(mhalf):
+            perm[n+i],perm[tele_qubits[i]]=perm[tele_qubits[i]],perm[n+i]
+        perm.extend([i+n+m for i in perm])
+        perm.append(2*(n+m))
+        S_tot = StabilizerState(S_tot.to_array()[:,perm])
+
+        #Operational part of Bell measurements. Note that this are only operations on the last m qubits
+        for j in range(mhalf):
+            S_tot.apply_CZ(n+j,n+j+mhalf)
             S_tot.apply_H(n+j)
-            S_tot.apply_H(n+m+j)
+            S_tot.apply_H(n+j+mhalf)
 
+        #Measure the last m qubits and apply the corresponding corrections
         meas_outcomes = []
-        for j in range(m):
-            meas_res = S_tot.measure(n+2*m-1-j)
+        for j in range(mhalf):
+            meas_res = S_tot.measure(n+mhalf)
             meas_outcomes.append(meas_res)
             if meas_res:
-                S_tot.apply_X(a[::-1][j])
-
-        for j in range(m):
-            meas_res = S_tot.measure(n+m-1-j)
+                S_tot.apply_X(tele_qubits[j])
+        for j in range(mhalf):
+            meas_res = S_tot.measure(n)
             meas_outcomes.append(meas_res)
             if meas_res:
-                S_tot.apply_Z(a[::-1][j])
+                S_tot.apply_Z(tele_qubits[j])
 
         return S_tot
 
