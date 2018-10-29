@@ -550,12 +550,9 @@ class StabilizerState:
         perm.extend([i+n for i in perm])
         perm.append(2*n)
         tmp_matrix = tmp_matrix[:,perm]
-        if tmp_matrix[tmp_matrix[:,0]].any():
-            rows_without_position = np.logical_not(tmp_matrix[:,0])
-            tmp_matrix = np.concatenate((tmp_matrix[tmp_matrix[:,0],: ],tmp_matrix[rows_without_position,: ]), 0)
-        else:
-            rows_without_position = np.logical_not(tmp_matrix[:,n])
-            tmp_matrix = np.concatenate((tmp_matrix[tmp_matrix[:,n],: ],tmp_matrix[rows_without_position,: ]), 0)
+        #List row with x on position as first row.
+        rows_without_position = np.logical_not(tmp_matrix[:,0])
+        tmp_matrix = np.concatenate((tmp_matrix[tmp_matrix[:,0],: ],tmp_matrix[rows_without_position,: ]), 0)
 
         # Check if there is an X or a Y at the qubit position
         if tmp_matrix[0, 0]:
