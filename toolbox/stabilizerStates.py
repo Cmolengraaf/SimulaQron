@@ -10,7 +10,7 @@
 import numpy as np
 import networkx as nx
 from scipy.linalg import block_diag
-from random import randint
+from random import randint,sample,choice
 from functools import partial
 
 
@@ -833,47 +833,74 @@ class StabilizerState:
         return S_tot
 
     def gate_teleport_two_qubits(self,tele_qubits = [0,1],seq_oper = []):
-        F=StabilizerState(["XIIZ","IXZI","IZXI","ZIIX"])
+        """
+        Apply the operations in seq_oper to an ancilla state and then do teleportation
+        such that the final state is the same as applying seq_oper to tele_qubits directly.
+        :param tele_qubits: positions of qubit to be teleported
+        :type tele_qubits: list
+        :param seq_oper: operations to apply on the qubits in tele_qubits via ancillas
+        :type seq_oper: list
+        :return: The stabilizer state of self (after teleporting)
+        :rtype: :obj:`SimulaQron.toolbox.stabilizerStates.StabilizerState`
+        """
         a,b = tele_qubits
         n=self.num_qubits
-        m = F.num_qubits
+        m = len(tele_qubits)*2 #we need two ancillas per teleported qubit
+        mhalf = int(m/2) #this will be a useful number later
 
+        #Prepare ancilla states
+        F = StabilizerState(m)
+        for j in range(mhalf):
+            F.apply_H(j)
+            F.apply_H(j+2)
+            F.apply_CZ(j,j+2)
+
+        #Rename seq_oper such that the indices correspond to the correct ancillas
         dict = {a:0,b:1,(a,b):(0,1),(b,a):(1,0)}
         perm_seq_oper = [[i,dict[j]] for i,j in seq_oper]
-        F.apply_seq_operations(perm_seq_oper)
+        # F.apply_seq_operations(perm_seq_oper)
+        F.random_Clifford_operations(seq_oper=perm_seq_oper)
 
+        #Combine the ancilla state with self, from here on we have n+m qubits.
         S_tot = (self * F)
-        tmp_matrix = S_tot.to_array()
-        perm = list(range(n+m))
 
+        #Relabel such that the ancillas which will be in the new self are on the correct positions already.
+        #i.e., the qubits to be measured are at the end and will be removed when measured to result in n qubits finally.
+        #For example, if we start with qubits [0,1,2,3], tele_qubts=[0,2] and ancilla's [4,5,6,7] this permutation
+        #results in [4,1,5,3,0,2,6,7]. The last four will be measured, so the final state will be on qubits [4,1,5,3].
+        perm = list(range(n+m))
         for i in range(2):
             perm[n+i],perm[tele_qubits[i]]=perm[tele_qubits[i]],perm[n+i]
-
         perm.extend([i+n+m for i in perm])
         perm.append(2*(n+m))
+        S_tot = StabilizerState(S_tot.to_array()[:,perm])
 
-        S_tot = StabilizerState(tmp_matrix[:,perm])
-        nm = S_tot.num_qubits
-
+        #Operational part of Bell measurements. Note that this are only operations on the last m qubits
         for j in range(2):
-            S_tot.apply_CZ(n+j,nm-j-1)
+            S_tot.apply_CZ(n+j,n+j+mhalf)
             S_tot.apply_H(n+j)
-            S_tot.apply_H(nm-j-1)
+            S_tot.apply_H(n+j+mhalf)
 
-        S_tot.apply_daggered_seq_operations(seq_oper)
+        #Cancelling the operations on F here (corresponding to U^\dagger in the gate tele circuit)
+        #Note that this are only operations on the first n qubits (or actually only on a,b \in n)
+        # S_tot.apply_daggered_seq_operations(seq_oper)
+        S_tot.random_Clifford_operations(seq_oper=seq_oper,hermitian=True)
+
+        #Measure the last m qubits and apply the corresponding corrections
         meas_outcomes = []
-
         for j in range(2):
-            meas_res = S_tot.measure(nm-j-1)
+            meas_res = S_tot.measure(n+mhalf)
             meas_outcomes.append(meas_res)
             if meas_res:
                 S_tot.apply_X(tele_qubits[j])
-
         for j in range(2):
             meas_res = S_tot.measure(n)
             meas_outcomes.append(meas_res)
             if meas_res:
                 S_tot.apply_Z(tele_qubits[j])
 
+        #Apply U again on a,b after all the corrections. Note that if the measurement outcomes are all 0,
+        #this last operation directly cancels the daggered operation from just before the measurements.
         # S_tot.apply_seq_operations(seq_oper)
+        S_tot.random_Clifford_operations(seq_oper=seq_oper)
         return S_tot
